@@ -91,9 +91,6 @@ $form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox = $false
 $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
-# Always on top
-$form.TopMost = $true
-
 # ============================================================
 # Controls
 # ============================================================
@@ -689,9 +686,14 @@ $linkGitHub.Add_Click({
 
 $form.Add_Shown({
 
+    # Temporarily bring window to foreground
+    $form.TopMost = $true
     $form.Activate()
 
     $form.BeginInvoke([Action]{
+
+        # Disable Always on Top
+        $form.TopMost = $false
 
         Initialize-Check
 
