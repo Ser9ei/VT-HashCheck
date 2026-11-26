@@ -47,7 +47,8 @@ Get your API key:
 
 https://www.virustotal.com/gui/my-apikey
 
-Installation
+## Installation
+
 1. Download the repository
 
 Clone the repository or download it as a ZIP archive and extract it to any convenient folder.
