@@ -121,9 +121,9 @@ If you move the application to another directory, run the installer again to upd
 
 To remove the context menu entry, execute the following command in PowerShell:
 
-powershell
+```powershell
 Remove-Item 'Registry::HKEY_CURRENT_USER\Software\Classes\*\shell\VirusTotalHash' -Recurse -Force
-
+```
 
 This removes the context menu integration from Windows File Explorer.
 
