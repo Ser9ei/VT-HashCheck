@@ -40,7 +40,6 @@ This project only implements requests to the publicly available VirusTotal API. 
 - Windows PowerShell
 - .NET Framework
 - Internet connection
-- VirusTotal account and API key
 
 A free VirusTotal account can be used to obtain an API key. API usage is subject to VirusTotal's account limits and terms.
 
