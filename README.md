@@ -38,6 +38,7 @@ Note: The utility retrieves existing VirusTotal reports. It does not upload file
 VirusTotal account and API key
 Windows (tested on Windows 11)
 Windows PowerShell
+.NET Framework
 Internet connection
 VirusTotal account and API key
 
@@ -47,8 +48,7 @@ Get your API key:
 
 https://www.virustotal.com/gui/my-apikey
 
-## Installation
-
+Installation
 1. Download the repository
 
 Clone the repository or download it as a ZIP archive and extract it to any convenient folder.
@@ -121,9 +121,9 @@ If you move the application to another directory, run the installer again to upd
 
 To remove the context menu entry, execute the following command in PowerShell:
 
-```powershell
+powershell
 Remove-Item 'Registry::HKEY_CURRENT_USER\Software\Classes\*\shell\VirusTotalHash' -Recurse -Force
-```
+
 
 This removes the context menu integration from Windows File Explorer.
 

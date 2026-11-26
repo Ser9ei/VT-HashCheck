@@ -29,21 +29,74 @@ $ShowGitHubLink = $true
 $ScriptVersion = "1.0.0"
 
 # ============================================================
+# Background SHA-256 worker (.NET)
+# ============================================================
+
+Add-Type -TypeDefinition @"
+using System;
+using System.ComponentModel;
+using System.IO;
+using System.Security.Cryptography;
+
+public class VTHashWorker
+{
+    public BackgroundWorker Worker { get; private set; }
+
+    public VTHashWorker()
+    {
+        Worker = new BackgroundWorker();
+
+        Worker.DoWork += (sender, e) =>
+        {
+            string filePath = (string)e.Argument;
+
+            using (FileStream stream = new FileStream(
+                filePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read))
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                byte[] hash = sha256.ComputeHash(stream);
+
+                e.Result = BitConverter.ToString(hash)
+                    .Replace("-", "")
+                    .ToLowerInvariant();
+            }
+        };
+    }
+}
+"@
+
+$workerInstance = New-Object VTHashWorker
+$worker = $workerInstance.Worker
+
+# ============================================================
 # Window
 # ============================================================
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "VT-HashCheck - VirusTotal File Hash Checker v$ScriptVersion"
+
 # Window icon
 $IconFile = Join-Path $PSScriptRoot 'VirusTotal.ico'
+
 if (Test-Path -LiteralPath $IconFile -PathType Leaf) {
     $form.Icon = New-Object System.Drawing.Icon($IconFile)
 }
+
 $form.ClientSize = New-Object System.Drawing.Size(700, 440)
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox = $false
 $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+
+# Always on top
+$form.TopMost = $true
+
+# ============================================================
+# Controls
+# ============================================================
 
 # File name
 $labelFile = New-Object System.Windows.Forms.Label
@@ -162,9 +215,6 @@ $linkGitHub.Size = New-Object System.Drawing.Size(150, 22)
 $linkGitHub.Text = "GitHub Repository"
 $linkGitHub.Visible = $ShowGitHubLink
 $linkGitHub.LinkBehavior = [System.Windows.Forms.LinkBehavior]::AlwaysUnderline
-$linkGitHub.LinkColor = $LinkColor
-$linkGitHub.ActiveLinkColor = $LinkColor
-$linkGitHub.VisitedLinkColor = $LinkColor
 $form.Controls.Add($linkGitHub)
 
 # ============================================================
@@ -253,18 +303,18 @@ function Show-ConfigurationError {
 
     $labelMessage.Text = $Message
 
-	$labelStatus.Text = "API key: $ApiKeyFile"
-	$labelStatus.ForeColor = $LinkColor
-	$labelStatus.Location = New-Object System.Drawing.Point(15, 310)
-	
-	$linkRegister.Visible = $true
-	$linkApiKey.Visible = $true
-	$btnKeyFile.Visible = $true
+    $labelStatus.Text = "API key: $ApiKeyFile"
+    $labelStatus.ForeColor = $LinkColor
+    $labelStatus.Location = New-Object System.Drawing.Point(15, 310)
 
-	$labelStats.Visible = $false
-	$labelDate.Visible = $false
+    $linkRegister.Visible = $true
+    $linkApiKey.Visible = $true
+    $btnKeyFile.Visible = $true
 
-	$btnRefresh.Enabled = [bool]$script:Hash
+    $labelStats.Visible = $false
+    $labelDate.Visible = $false
+
+    $btnRefresh.Enabled = [bool]$script:Hash
 
     $form.Cursor = [System.Windows.Forms.Cursors]::Default
 }
@@ -310,15 +360,15 @@ function Load-ApiKey {
 
         return $false
     }
-	
-	$labelStatus.Location = New-Object System.Drawing.Point(15, 320)
 
-	$linkRegister.Visible = $false
-	$linkApiKey.Visible = $false
-	$btnKeyFile.Visible = $false
+    $labelStatus.Location = New-Object System.Drawing.Point(15, 320)
 
-	$labelStats.Visible = $true
-	$labelDate.Visible = $true
+    $linkRegister.Visible = $false
+    $linkApiKey.Visible = $false
+    $btnKeyFile.Visible = $false
+
+    $labelStats.Visible = $true
+    $labelDate.Visible = $true
 
     return $true
 }
@@ -350,7 +400,6 @@ function Get-VTReport {
 
     try {
 
-        # Reload API key every time Refresh is pressed
         if (!(Load-ApiKey)) {
             return
         }
@@ -483,31 +532,24 @@ function Get-VTReport {
 
         $form.Cursor = [System.Windows.Forms.Cursors]::Default
 
-        # Refresh available whenever SHA256 exists
         $btnRefresh.Enabled = [bool]$script:Hash
 
     }
 }
 
 # ============================================================
-# Initialize: calculate hash
+# Initialize: calculate hash in background
 # ============================================================
 
 function Initialize-Check {
-
-    $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
 
     $labelResult.ForeColor = $TextColor
     $labelResult.Text = "Calculating SHA-256..."
     $labelMessage.Text = "Please wait..."
     $labelStatus.Text = ""
 
-    $form.Refresh()
-
     if ([string]::IsNullOrWhiteSpace($FilePath) -or
         !(Test-Path -LiteralPath $FilePath -PathType Leaf)) {
-
-        $form.Cursor = [System.Windows.Forms.Cursors]::Default
 
         $labelResult.ForeColor = [System.Drawing.Color]::Red
         $labelResult.Text = "File not found"
@@ -516,35 +558,55 @@ function Initialize-Check {
         return
     }
 
-    try {
+    $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
 
-        $script:Hash = (
-            Get-FileHash -LiteralPath $FilePath -Algorithm SHA256 -ErrorAction Stop
-        ).Hash.ToLower()
+    $worker.RunWorkerAsync($FilePath)
+}
 
-        $textHash.Text = $script:Hash
+# ============================================================
+# Background SHA-256 calculation
+# ============================================================
 
-        $script:ReportURL = "https://www.virustotal.com/gui/file/$($script:Hash)"
+$worker.Add_RunWorkerCompleted({
 
-        $btnCopy.Enabled = $true
-        $btnVT.Enabled = $true
-        $btnRefresh.Enabled = $true
+    param($sender, $e)
 
-    }
-    catch {
+    $form.Cursor = [System.Windows.Forms.Cursors]::Default
 
-        $form.Cursor = [System.Windows.Forms.Cursors]::Default
+    if ($e.Error) {
 
         $labelResult.ForeColor = [System.Drawing.Color]::Red
         $labelResult.Text = "Hash calculation error"
-        $labelMessage.Text = $_.Exception.Message
+
+        $labelMessage.Text = $e.Error.GetBaseException().Message
+
+        $labelStatus.Text = "SHA-256 calculation failed."
 
         return
     }
 
-    Get-VTReport
-}
+    if ([string]::IsNullOrWhiteSpace($e.Result)) {
 
+        $labelResult.ForeColor = [System.Drawing.Color]::Red
+        $labelResult.Text = "Hash calculation error"
+        $labelMessage.Text = "SHA-256 result is empty."
+
+        return
+    }
+
+    $script:Hash = $e.Result
+
+    $textHash.Text = $script:Hash
+
+    $script:ReportURL = "https://www.virustotal.com/gui/file/$($script:Hash)"
+
+    $btnCopy.Enabled = $true
+    $btnVT.Enabled = $true
+    $btnRefresh.Enabled = $true
+
+    Get-VTReport
+
+})
 
 # ============================================================
 # Buttons and links
@@ -627,6 +689,8 @@ $linkGitHub.Add_Click({
 
 $form.Add_Shown({
 
+    $form.Activate()
+
     $form.BeginInvoke([Action]{
 
         Initialize-Check
@@ -636,3 +700,11 @@ $form.Add_Shown({
 })
 
 [void]$form.ShowDialog()
+
+# ============================================================
+# Cleanup
+# ============================================================
+
+$worker.Dispose()
+$workerInstance = $null
+$form.Dispose()
