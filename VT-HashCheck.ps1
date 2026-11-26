@@ -3,30 +3,178 @@
 # Copyright (C) 2026 Ser9ei
 #
 
+<#
+.SYNOPSIS
+    VT-HashCheck - VirusTotal file hash checker with Windows context menu integration.
+
+.DESCRIPTION
+    Calculates SHA-256 of a file and retrieves existing analysis report from VirusTotal API v3.
+    Supports installation and uninstallation of the Explorer context menu entry.
+
+.PARAMETER FilePath
+    Path to the file to check (used by context menu).
+
+.PARAMETER Install
+    Install the context menu entry for the current user.
+
+.PARAMETER Uninstall
+    Remove the context menu entry.
+
+.EXAMPLE
+    .\VT-HashCheck.ps1 -Install
+
+.EXAMPLE
+    .\VT-HashCheck.ps1 -Uninstall
+
+.EXAMPLE
+    .\VT-HashCheck.ps1 -FilePath "C:\path\to\file.exe"
+#>
+
 param(
-    [string]$FilePath
+    [Parameter(Mandatory = $false)]
+    [string]$FilePath,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Install,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Uninstall
 )
 
+$ErrorActionPreference = 'Stop'
+
+# ============================================================
+# Shared configuration
+# ============================================================
+
+$ScriptVersion = "1.1.0"
+$MenuPath = 'Registry::HKEY_CURRENT_USER\Software\Classes\*\shell\VirusTotalHash'
+$AppFolder = $PSScriptRoot
+$ThisScript = $PSCommandPath
+$IconFile = Join-Path $AppFolder 'VirusTotal.ico'
+$ApiKeyFile = Join-Path $AppFolder 'virustotal-api.key'
+$ApiBase = 'https://www.virustotal.com/api/v3/files/'
+$GitHubRep = "https://github.com/Ser9ei/VT-HashCheck"
+$ShowGitHubLink = $true
+
+# ============================================================
+# Install / Uninstall functions
+# ============================================================
+
+function Install-ContextMenu {
+    Write-Host ""
+    Write-Host "VT-HashCheck v$ScriptVersion - Installing context menu..." -ForegroundColor Cyan
+
+    # Prefer icon next to the script; fall back to powershell.exe
+    $Icon = $IconFile
+    if (!(Test-Path -LiteralPath $Icon -PathType Leaf)) {
+        Write-Host "WARNING: VirusTotal.ico not found: $Icon" -ForegroundColor Yellow
+        Write-Host "Using default PowerShell icon." -ForegroundColor Yellow
+        $Icon = 'powershell.exe'
+    }
+
+    # Create registry keys
+    New-Item -Path "$MenuPath\command" -Force -ErrorAction Stop | Out-Null
+
+    # Context menu title
+    Set-ItemProperty -Path $MenuPath `
+        -Name '(Default)' `
+        -Value 'VT-HashCheck: Check hash on VirusTotal' `
+        -ErrorAction Stop
+
+    # Menu icon
+    Set-ItemProperty -Path $MenuPath `
+        -Name 'Icon' `
+        -Value $Icon `
+        -ErrorAction Stop
+
+    # Command - points to this same script
+    $Command = 'cmd.exe /c start "" /min powershell.exe -NoProfile -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $ThisScript + '" -FilePath "%1"'
+
+    Set-ItemProperty -Path "$MenuPath\command" `
+        -Name '(Default)' `
+        -Value $Command `
+        -ErrorAction Stop
+
+    Write-Host ""
+    Write-Host "VirusTotal context menu installed successfully!" -ForegroundColor Green
+    Write-Host "Application folder : $AppFolder"
+    Write-Host "Script             : $ThisScript"
+    Write-Host "Icon               : $Icon"
+    Write-Host ""
+    Write-Host "Right-click any file in Explorer and choose" -ForegroundColor Gray
+    Write-Host "'VT-HashCheck: Check hash on VirusTotal'." -ForegroundColor Gray
+    Write-Host ""
+}
+
+function Uninstall-ContextMenu {
+    Write-Host ""
+    Write-Host "VT-HashCheck v$ScriptVersion - Removing context menu..." -ForegroundColor Cyan
+
+    if (Test-Path -LiteralPath $MenuPath) {
+        Remove-Item -Path $MenuPath -Recurse -Force -ErrorAction Stop
+        Write-Host ""
+        Write-Host "Context menu entry removed successfully." -ForegroundColor Green
+    }
+    else {
+        Write-Host ""
+        Write-Host "Context menu entry was not found (already removed)." -ForegroundColor Yellow
+    }
+
+    Write-Host ""
+    Write-Host "You can now safely delete the application folder if desired:" -ForegroundColor Gray
+    Write-Host "  $AppFolder" -ForegroundColor Gray
+    Write-Host ""
+}
+
+# ============================================================
+# Early exit for Install / Uninstall modes
+# ============================================================
+
+if ($Install -and $Uninstall) {
+    Write-Host ""
+    Write-Host "ERROR: Specify either -Install or -Uninstall, not both." -ForegroundColor Red
+    exit 1
+}
+
+if ($Install) {
+    Install-ContextMenu
+    exit 0
+}
+
+if ($Uninstall) {
+    Uninstall-ContextMenu
+    exit 0
+}
+
+# ============================================================
+# GUI mode - requires a file path
+# ============================================================
+
+if ([string]::IsNullOrWhiteSpace($FilePath)) {
+    Write-Host ""
+    Write-Host "VT-HashCheck v$ScriptVersion" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Usage:" -ForegroundColor White
+    Write-Host "  .\VT-HashCheck.ps1 -Install                 Install context menu"
+    Write-Host "  .\VT-HashCheck.ps1 -Uninstall               Remove context menu"
+    Write-Host "  .\VT-HashCheck.ps1 -FilePath <path>         Check a file"
+    Write-Host ""
+    Write-Host "Or simply right-click a file in Explorer after installation."
+    Write-Host ""
+    exit 0
+}
+
+# From here on we are in GUI / check mode
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-# ============================================================
-# Configuration
-# ============================================================
-
-$ApiKeyFile = Join-Path $PSScriptRoot 'virustotal-api.key'
-$ApiBase = 'https://www.virustotal.com/api/v3/files/'
-
 $script:Hash = $null
 $script:ReportURL = $null
 $script:ApiKey = $null
 $script:IsBusy = $false
-
-$GitHubRep = "https://github.com/Ser9ei/VT-HashCheck"
-$ShowGitHubLink = $true
-$ScriptVersion = "1.0.0"
 
 # ============================================================
 # Background SHA-256 worker (.NET)
@@ -77,9 +225,6 @@ $worker = $workerInstance.Worker
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "VT-HashCheck - VirusTotal File Hash Checker v$ScriptVersion"
-
-# Window icon
-$IconFile = Join-Path $PSScriptRoot 'VirusTotal.ico'
 
 if (Test-Path -LiteralPath $IconFile -PathType Leaf) {
     $form.Icon = New-Object System.Drawing.Icon($IconFile)
