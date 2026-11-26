@@ -31,16 +31,16 @@ This project only implements requests to the publicly available VirusTotal API. 
 - Copy SHA-256 – copy the calculated hash to the clipboard.
 - Windows theme support – automatically adapt to light and dark Windows themes.
 
-Note: The utility retrieves existing VirusTotal reports. It does not upload files to VirusTotal.
+**Note**: The utility retrieves existing VirusTotal reports. It does not upload files to VirusTotal.
 
 ## Requirements
 
-VirusTotal account and API key
-Windows (tested on Windows 11)
-Windows PowerShell
-.NET Framework
-Internet connection
-VirusTotal account and API key
+- VirusTotal account and API key
+- Windows (tested on Windows 11)
+- Windows PowerShell
+- .NET Framework
+- Internet connection
+- VirusTotal account and API key
 
 A free VirusTotal account can be used to obtain an API key. API usage is subject to VirusTotal's account limits and terms.
 
@@ -48,7 +48,8 @@ Get your API key:
 
 https://www.virustotal.com/gui/my-apikey
 
-Installation
+## Installation
+
 1. Download the repository
 
 Clone the repository or download it as a ZIP archive and extract it to any convenient folder.
@@ -121,9 +122,9 @@ If you move the application to another directory, run the installer again to upd
 
 To remove the context menu entry, execute the following command in PowerShell:
 
-powershell
+```powershell
 Remove-Item 'Registry::HKEY_CURRENT_USER\Software\Classes\*\shell\VirusTotalHash' -Recurse -Force
-
+```
 
 This removes the context menu integration from Windows File Explorer.
 
